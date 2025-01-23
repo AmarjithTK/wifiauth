@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class HostelWifiAuth {
@@ -14,7 +13,11 @@ class HostelWifiAuth {
   ///
   /// [username]: The username for authentication.
   /// [password]: The password for authentication.
-  Future<void> login(String username, String password) async {
+  ///
+  /// Returns a string indicating the result of the login attempt.
+  /// On success, returns "Login successful."
+  /// On failure, returns an error message.
+  Future<String> login(String username, String password) async {
     final String url = "$_baseUrl/index.php?zone=$_zone&redirurl=$_redirUrl";
 
     try {
@@ -33,21 +36,24 @@ class HostelWifiAuth {
       );
 
       if (response.statusCode == 200) {
-        print("Login successful.");
         _extractLogoutId(response.body); // Extract logout_id from the response
+        return "Login successful.";
       } else {
-        print("Login failed. Status code: ${response.statusCode}");
+        return "Login failed. Status code: ${response.statusCode}";
       }
     } catch (e) {
-      print("Error during login: $e");
+      return "Error during login: $e";
     }
   }
 
   /// Logs out from the Hostel WiFi network.
-  Future<void> logout() async {
+  ///
+  /// Returns a string indicating the result of the logout attempt.
+  /// On success, returns "Logout successful."
+  /// On failure, returns an error message.
+  Future<String> logout() async {
     if (_logoutId == null) {
-      print("No logout ID found. Please login first.");
-      return;
+      return "No logout ID found. Please login first.";
     }
 
     final String url = "$_baseUrl/index.php";
@@ -67,12 +73,12 @@ class HostelWifiAuth {
       );
 
       if (response.statusCode == 200) {
-        print("Logout successful.");
+        return "Logout successful.";
       } else {
-        print("Logout failed. Status code: ${response.statusCode}");
+        return "Logout failed. Status code: ${response.statusCode}";
       }
     } catch (e) {
-      print("Error during logout: $e");
+      return "Error during logout: $e";
     }
   }
 
@@ -86,9 +92,6 @@ class HostelWifiAuth {
 
     if (match != null) {
       _logoutId = match.group(1);
-      print("Logout ID extracted: $_logoutId");
-    } else {
-      print("Failed to extract logout ID from the response.");
     }
   }
 }
