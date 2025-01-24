@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-// import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart'; // For MethodChannel
 
 // Import the authentication classes from lib/utils
@@ -32,6 +31,8 @@ class WiFiAuthenticatorScreen extends StatefulWidget {
 class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
   final TextEditingController _logController = TextEditingController();
   String responseMessage = '';
+  String? _connectedWifi; // Tracks the currently connected WiFi
+  bool _isAuthenticated = false; // Tracks authentication status
 
   // Instances of the authentication classes
   final HostelWifiAuth _hostelWifiAuth = HostelWifiAuth();
@@ -51,6 +52,8 @@ class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
       _logController.text += log + "\n";
       setState(() {
         responseMessage = log;
+        _isAuthenticated = true;
+        _connectedWifi = "Hostel WiFi";
       });
 
       // Mark the network as validated after successful login
@@ -59,6 +62,8 @@ class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
       _logController.text += "Error: $e\n";
       setState(() {
         responseMessage = "Error: $e";
+        _isAuthenticated = false;
+        _connectedWifi = null;
       });
     }
   }
@@ -73,6 +78,8 @@ class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
       _logController.text += log + "\n";
       setState(() {
         responseMessage = log;
+        _isAuthenticated = true;
+        _connectedWifi = "Academic WiFi";
       });
 
       // Mark the network as validated after successful login
@@ -81,6 +88,34 @@ class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
       _logController.text += "Error: $e\n";
       setState(() {
         responseMessage = "Error: $e";
+        _isAuthenticated = false;
+        _connectedWifi = null;
+      });
+    }
+  }
+
+  /// Logs out from the connected WiFi network.
+  Future<void> logout() async {
+    _logController.text += "Logging out from $_connectedWifi...\n";
+
+    try {
+      if (_connectedWifi == "Hostel WiFi") {
+        final String log = await _hostelWifiAuth.logout();
+        _logController.text += log + "\n";
+      } else if (_connectedWifi == "Academic WiFi") {
+        final String log = await _academicAuth.logout();
+        _logController.text += log + "\n";
+      }
+
+      setState(() {
+        _isAuthenticated = false;
+        _connectedWifi = null;
+        responseMessage = "Logged out successfully.";
+      });
+    } catch (e) {
+      _logController.text += "Error during logout: $e\n";
+      setState(() {
+        responseMessage = "Error during logout: $e";
       });
     }
   }
@@ -101,25 +136,63 @@ class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('WiFi Authenticator'),
+        title: Center(child: Text('WiFi Authenticator')),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            ElevatedButton(
-              onPressed: connectToHostelWiFi,
-              child: Text('Connect to Hostel WiFi'),
-            ),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: connectToAcademicWiFi,
-              child: Text('Connect to Academic WiFi'),
-            ),
+            // Display connected WiFi card if authenticated
+            if (_isAuthenticated && _connectedWifi != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Text(
+                        "Connected to:",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        _connectedWifi!,
+                        style: TextStyle(
+                          fontSize: 20,
+                          color: Colors.green,
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: logout,
+                        child: Text('Logout'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Display authentication buttons
+            if (!_isAuthenticated) ...[
+              ElevatedButton(
+                onPressed: connectToHostelWiFi,
+                child: Text('Connect to Hostel WiFi'),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: connectToAcademicWiFi,
+                child: Text('Connect to Academic WiFi'),
+              ),
+            ],
+
             SizedBox(height: 20),
             Text(responseMessage),
             SizedBox(height: 20),
+
+            // Display detailed logs
             Expanded(
               child: TextField(
                 controller: _logController,
@@ -127,7 +200,19 @@ class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
                 readOnly: true, // Make it read-only
                 decoration: InputDecoration(
                   border: OutlineInputBorder(),
-                  labelText: 'Logs and Response',
+                  labelText: 'Detailed Logs',
+                ),
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                "Made by AmarjithTK (B22EE)",
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
                 ),
               ),
             ),
