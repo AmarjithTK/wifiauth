@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart'; // For SystemNavigator
 import './wifiauthscreen.dart'; // Import the WiFiAuthScreen
 
 class FirstTimeLoginScreen extends StatefulWidget {
@@ -12,11 +13,33 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _secretCodeController = TextEditingController();
 
+  // Hardcoded secret code
+  final String _hardcodedSecretCode =
+      "8078937265"; // Replace with your secret code
+
   Future<void> _saveCredentials() async {
+    // Check if the entered secret code matches the hardcoded one
+    if (_secretCodeController.text != _hardcodedSecretCode) {
+      // Show an error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Invalid secret code. Exiting app..."),
+          backgroundColor: Colors.red,
+        ),
+      );
+
+      // Wait for a short delay to show the SnackBar
+      await Future.delayed(Duration(seconds: 2));
+
+      // Quit the app
+      SystemNavigator.pop();
+      return;
+    }
+
+    // Save credentials if the secret code is correct
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('username', _usernameController.text);
     await prefs.setString('password', _passwordController.text);
-    await prefs.setString('secretCode', _secretCodeController.text);
 
     // Navigate to the WiFiAuthScreen after saving credentials
     Navigator.of(context).pushReplacement(
@@ -58,7 +81,7 @@ class _FirstTimeLoginScreenState extends State<FirstTimeLoginScreen> {
             Text(
               "Made by Amarjith TK",
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 20,
                 color: Colors.grey[600],
                 fontStyle: FontStyle.italic,
               ),
