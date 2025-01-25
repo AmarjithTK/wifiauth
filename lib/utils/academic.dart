@@ -13,11 +13,42 @@ class AcademicAuth {
   Future<({bool isLoggedIn, String log})> checkLoginStatus() async {
     try {
       var response = await http.get(Uri.parse(loginUrl));
-      if (response.statusCode == 204) {
+
+      // Check if the response is a redirect (status code 3xx)
+      if (response.statusCode >= 300 && response.statusCode < 400) {
+        // Extract the redirect URL from the 'Location' header
+        String? redirectUrl = response.headers['location'];
+        if (redirectUrl != null) {
+          // Fetch the redirect URL to get the login page
+          var redirectResponse = await http.get(Uri.parse(redirectUrl));
+          if (redirectResponse.statusCode == 200) {
+            // Extract webAddress and secureKey from the redirect response
+            webAddress = extractWebAddress(redirectResponse.body);
+            secureKey = extractSecureKey(redirectResponse.body);
+            return (
+              isLoggedIn: false,
+              log: "Not logged in. Redirected to login page."
+            );
+          } else {
+            return (
+              isLoggedIn: false,
+              log:
+                  "Failed to fetch redirect page. Status code: ${redirectResponse.statusCode}"
+            );
+          }
+        } else {
+          return (isLoggedIn: false, log: "Redirect location header missing.");
+        }
+      } else if (response.statusCode == 204) {
         return (isLoggedIn: true, log: "Already logged in.");
+      } else {
+        return (
+          isLoggedIn: false,
+          log: "Not logged in. Status code: ${response.statusCode}"
+        );
       }
-      return (isLoggedIn: false, log: "Not logged in.");
     } catch (e) {
+      // Handle network errors (e.g., gstatic.com unreachable)
       return (isLoggedIn: false, log: "Error checking login status: $e");
     }
   }
@@ -34,33 +65,28 @@ class AcademicAuth {
       return loginStatus.log; // Return log if already logged in
     }
 
-    var response = await http.get(Uri.parse(loginUrl));
-    if (response.statusCode != 200) {
-      return "Failed to fetch login page. Status code: ${response.statusCode}";
-    }
-
-    var body = response.body;
-    webAddress = extractWebAddress(body);
-    secureKey = extractSecureKey(body);
-
     if (webAddress.isEmpty || secureKey.isEmpty) {
       return "Failed to extract necessary information for login.";
     }
 
-    var loginResponse = await http.post(
-      Uri.parse('$webAddress/fgtauth?$secureKey'),
-      body: {
-        '4Tredir': 'http://www.gstatic.com/generate_204',
-        'magic': secureKey,
-        'username': username,
-        'password': password,
-      },
-    );
+    try {
+      var loginResponse = await http.post(
+        Uri.parse('$webAddress/fgtauth?$secureKey'),
+        body: {
+          '4Tredir': 'http://www.gstatic.com/generate_204',
+          'magic': secureKey,
+          'username': username,
+          'password': password,
+        },
+      );
 
-    if (loginResponse.statusCode == 200) {
-      return "Login successful.";
-    } else {
-      return "Login failed. Status code: ${loginResponse.statusCode}";
+      if (loginResponse.statusCode == 200) {
+        return "Login successful.";
+      } else {
+        return "Login failed. Status code: ${loginResponse.statusCode}";
+      }
+    } catch (e) {
+      return "Error during login: $e";
     }
   }
 
@@ -72,24 +98,28 @@ class AcademicAuth {
       return "No login details found. Please login first.";
     }
 
-    var logoutResponse = await http.get(
-      Uri.parse('$webAddress/logout?$secureKey'),
-      headers: {
-        'Referer': '$webAddress/keepalive?$secureKey',
-      },
-    );
+    try {
+      var logoutResponse = await http.get(
+        Uri.parse('$webAddress/logout?$secureKey'),
+        headers: {
+          'Referer': '$webAddress/keepalive?$secureKey',
+        },
+      );
 
-    if (logoutResponse.statusCode == 200) {
-      return "Logout successful.";
-    } else {
-      return "Logout failed. Status code: ${logoutResponse.statusCode}";
+      if (logoutResponse.statusCode == 200) {
+        return "Logout successful.";
+      } else {
+        return "Logout failed. Status code: ${logoutResponse.statusCode}";
+      }
+    } catch (e) {
+      return "Error during logout: $e";
     }
   }
 
   /// Extracts the web address from the HTML response.
   String extractWebAddress(String body) {
     // Regex to extract the web address from the HTML response
-    // Example: <a href="http://192.168.102.1:1000/fgtauth?0d080d000a135b5c">
+    // Example: <a href="http://172.20.28.1/fgtauth?0d080d000a135b5c">
     RegExp regex = RegExp(r'href="(http://[^"]+fgtauth\?[^"]+)"');
     Match? match = regex.firstMatch(body);
     if (match != null) {
@@ -101,7 +131,7 @@ class AcademicAuth {
   /// Extracts the secure key from the HTML response.
   String extractSecureKey(String body) {
     // Regex to extract the secure key from the HTML response
-    // Example: <a href="http://192.168.102.1:1000/fgtauth?0d080d000a135b5c">
+    // Example: <a href="http://172.20.28.1/fgtauth?0d080d000a135b5c">
     RegExp regex = RegExp(r'fgtauth\?([^"]+)"');
     Match? match = regex.firstMatch(body);
     if (match != null) {

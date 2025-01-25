@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For MethodChannel
+import 'package:shared_preferences/shared_preferences.dart';
+import './screens/wifiauthscreen.dart';
+import './screens/firstscreen.dart';
 
-// Import the authentication classes from lib/utils
-import './utils/academic.dart'; // AcademicAuth class
-import './utils/hostel.dart'; // HostelWifiAuth class
+// Import the WiFiAuthScreen
 
-void main() {
-  runApp(MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final bool isFirstTime = prefs.getString('username') == null;
+
+  runApp(MyApp(isFirstTime: isFirstTime));
 }
 
 class MyApp extends StatelessWidget {
+  final bool isFirstTime;
+
+  MyApp({required this.isFirstTime});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -17,208 +25,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: WiFiAuthenticatorScreen(),
-    );
-  }
-}
-
-class WiFiAuthenticatorScreen extends StatefulWidget {
-  @override
-  _WiFiAuthenticatorScreenState createState() =>
-      _WiFiAuthenticatorScreenState();
-}
-
-class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
-  final TextEditingController _logController = TextEditingController();
-  String responseMessage = '';
-  String? _connectedWifi; // Tracks the currently connected WiFi
-  bool _isAuthenticated = false; // Tracks authentication status
-
-  // Instances of the authentication classes
-  final HostelWifiAuth _hostelWifiAuth = HostelWifiAuth();
-  final AcademicAuth _academicAuth = AcademicAuth();
-
-  // Method channel to communicate with native Android code
-  static const platform = MethodChannel('com.example.wifiauth/network');
-
-  /// Connects to the Hostel WiFi network.
-  Future<void> connectToHostelWiFi() async {
-    _logController.clear();
-    _logController.text += "Connecting to Hostel WiFi...\n";
-
-    try {
-      final String log =
-          await _hostelWifiAuth.login("amarjith_b220682ee", "j2");
-      _logController.text += log + "\n";
-      setState(() {
-        responseMessage = log;
-        _isAuthenticated = true;
-        _connectedWifi = "Hostel WiFi";
-      });
-
-      // Mark the network as validated after successful login
-      await _useNetworkAsIs();
-    } catch (e) {
-      _logController.text += "Error: $e\n";
-      setState(() {
-        responseMessage = "Error: $e";
-        _isAuthenticated = false;
-        _connectedWifi = null;
-      });
-    }
-  }
-
-  /// Connects to the Academic WiFi network.
-  Future<void> connectToAcademicWiFi() async {
-    _logController.clear();
-    _logController.text += "Connecting to Academic WiFi...\n";
-
-    try {
-      final String log = await _academicAuth.login("amarjith_b220682ee", "j2");
-      _logController.text += log + "\n";
-      setState(() {
-        responseMessage = log;
-        _isAuthenticated = true;
-        _connectedWifi = "Academic WiFi";
-      });
-
-      // Mark the network as validated after successful login
-      await _useNetworkAsIs();
-    } catch (e) {
-      _logController.text += "Error: $e\n";
-      setState(() {
-        responseMessage = "Error: $e";
-        _isAuthenticated = false;
-        _connectedWifi = null;
-      });
-    }
-  }
-
-  /// Logs out from the connected WiFi network.
-  Future<void> logout() async {
-    _logController.text += "Logging out from $_connectedWifi...\n";
-
-    try {
-      if (_connectedWifi == "Hostel WiFi") {
-        final String log = await _hostelWifiAuth.logout();
-        _logController.text += log + "\n";
-      } else if (_connectedWifi == "Academic WiFi") {
-        final String log = await _academicAuth.logout();
-        _logController.text += log + "\n";
-      }
-
-      setState(() {
-        _isAuthenticated = false;
-        _connectedWifi = null;
-        responseMessage = "Logged out successfully.";
-      });
-    } catch (e) {
-      _logController.text += "Error during logout: $e\n";
-      setState(() {
-        responseMessage = "Error during logout: $e";
-      });
-    }
-  }
-
-  /// Marks the network as validated using the native method.
-  Future<void> _useNetworkAsIs() async {
-    try {
-      // Call the native method to mark the network as validated
-      await platform.invokeMethod('useNetworkAsIs');
-      _logController.text += "Network marked as validated.\n";
-    } on PlatformException catch (e) {
-      _logController.text +=
-          "Failed to mark network as validated: ${e.message}\n";
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Center(child: Text('WiFi Authenticator')),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            // Display connected WiFi card if authenticated
-            if (_isAuthenticated && _connectedWifi != null)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Text(
-                        "Connected to:",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        _connectedWifi!,
-                        style: TextStyle(
-                          fontSize: 20,
-                          color: Colors.green,
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: logout,
-                        child: Text('Logout'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            // Display authentication buttons
-            if (!_isAuthenticated) ...[
-              ElevatedButton(
-                onPressed: connectToHostelWiFi,
-                child: Text('Connect to Hostel WiFi'),
-              ),
-              SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: connectToAcademicWiFi,
-                child: Text('Connect to Academic WiFi'),
-              ),
-            ],
-
-            SizedBox(height: 20),
-            Text(responseMessage),
-            SizedBox(height: 20),
-
-            // Display detailed logs
-            Expanded(
-              child: TextField(
-                controller: _logController,
-                maxLines: null, // Allow multiple lines
-                readOnly: true, // Make it read-only
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Detailed Logs',
-                ),
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                "Made by AmarjithTK (B22EE)",
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      home: isFirstTime ? FirstTimeLoginScreen() : WiFiAuthScreen(),
     );
   }
 }

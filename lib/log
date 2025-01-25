@@ -1,0 +1,463 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // For MethodChannel
+
+// Import the authentication classes from lib/utils
+import './utils/academic.dart'; // AcademicAuth class
+import './utils/hostel.dart'; // HostelWifiAuth class
+
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'WiFi Authenticator',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: WiFiAuthenticatorScreen(),
+    );
+  }
+}
+
+class WiFiAuthenticatorScreen extends StatefulWidget {
+  @override
+  _WiFiAuthenticatorScreenState createState() =>
+      _WiFiAuthenticatorScreenState();
+}
+
+class _WiFiAuthenticatorScreenState extends State<WiFiAuthenticatorScreen> {
+  final TextEditingController _logController = TextEditingController();
+  String responseMessage = '';
+  String? _connectedWifi; // Tracks the currently connected WiFi
+  bool _isAuthenticated = false; // Tracks authentication status
+
+  // Instances of the authentication classes
+  final HostelWifiAuth _hostelWifiAuth = HostelWifiAuth();
+  final AcademicAuth _academicAuth = AcademicAuth();
+
+  // Method channel to communicate with native Android code
+  static const platform = MethodChannel('com.example.wifiauth/network');
+
+  /// Connects to the Hostel WiFi network.
+  Future<void> connectToHostelWiFi() async {
+    _logController.clear();
+    _logController.text += "Connecting to Hostel WiFi...\n";
+
+    try {
+      final String log =
+          await _hostelWifiAuth.login("amarjith_b220682ee", "j2");
+      _logController.text += log + "\n";
+      setState(() {
+        responseMessage = log;
+        _isAuthenticated = true;
+        _connectedWifi = "Hostel WiFi";
+      });
+
+      // Mark the network as validated after successful login
+      await _useNetworkAsIs();
+    } catch (e) {
+      _logController.text += "Error: $e\n";
+      setState(() {
+        responseMessage = "Error: $e";
+        _isAuthenticated = false;
+        _connectedWifi = null;
+      });
+    }
+  }
+
+  /// Connects to the Academic WiFi network.
+  Future<void> connectToAcademicWiFi() async {
+    _logController.clear();
+    _logController.text += "Connecting to Academic WiFi...\n";
+
+    try {
+      final String log = await _academicAuth.login("amarjith_b220682ee", "j2");
+      _logController.text += log + "\n";
+      setState(() {
+        responseMessage = log;
+        _isAuthenticated = true;
+        _connectedWifi = "Academic WiFi";
+      });
+
+      // Mark the network as validated after successful login
+      await _useNetworkAsIs();
+    } catch (e) {
+      _logController.text += "Error: $e\n";
+      setState(() {
+        responseMessage = "Error: $e";
+        _isAuthenticated = false;
+        _connectedWifi = null;
+      });
+    }
+  }
+
+  /// Logs out from the connected WiFi network.
+  Future<void> logout() async {
+    _logController.text += "Logging out from $_connectedWifi...\n";
+
+    try {
+      if (_connectedWifi == "Hostel WiFi") {
+        final String log = await _hostelWifiAuth.logout();
+        _logController.text += log + "\n";
+      } else if (_connectedWifi == "Academic WiFi") {
+        final String log = await _academicAuth.logout();
+        _logController.text += log + "\n";
+      }
+
+      setState(() {
+        _isAuthenticated = false;
+        _connectedWifi = null;
+        responseMessage = "Logged out successfully.";
+      });
+    } catch (e) {
+      _logController.text += "Error during logout: $e\n";
+      setState(() {
+        responseMessage = "Error during logout: $e";
+      });
+    }
+  }
+
+  /// Marks the network as validated using the native method.
+  Future<void> _useNetworkAsIs() async {
+    try {
+      // Call the native method to mark the network as validated
+      await platform.invokeMethod('useNetworkAsIs');
+      _logController.text += "Network marked as validated.\n";
+    } on PlatformException catch (e) {
+      _logController.text +=
+          "Failed to mark network as validated: ${e.message}\n";
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Center(child: Text('WiFi Authenticator')),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            // Display connected WiFi card if authenticated
+            if (_isAuthenticated && _connectedWifi != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Text(
+                        "Connected to:",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        _connectedWifi!,
+                        style: TextStyle(
+                          fontSize: 20,
+                          color: Colors.green,
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: logout,
+                        child: Text('Logout'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Display authentication buttons
+            if (!_isAuthenticated) ...[
+              ElevatedButton(
+                onPressed: connectToHostelWiFi,
+                child: Text('Connect to Hostel WiFi'),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: connectToAcademicWiFi,
+                child: Text('Connect to Academic WiFi'),
+              ),
+            ],
+
+            SizedBox(height: 20),
+            Text(responseMessage),
+            SizedBox(height: 20),
+
+            // Display detailed logs
+            Expanded(
+              child: TextField(
+                controller: _logController,
+                maxLines: null, // Allow multiple lines
+                readOnly: true, // Make it read-only
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Detailed Logs',
+                ),
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                "Made by AmarjithTK (B22EE)",
+                style: TextStyle(
+                  fontSize: 1,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+import 'package:http/http.dart' as http;
+
+class AcademicAuth {
+  final String loginUrl = 'http://www.gstatic.com/generate_204';
+  String webAddress = '';
+  String secureKey = '';
+
+  /// Checks if the user is already logged in.
+  ///
+  /// Returns a tuple containing:
+  /// - A boolean indicating whether the user is logged in.
+  /// - A log message describing the result.
+  Future<({bool isLoggedIn, String log})> checkLoginStatus() async {
+    try {
+      var response = await http.get(Uri.parse(loginUrl));
+
+      // Check if the response is a redirect (status code 3xx)
+      if (response.statusCode >= 300 && response.statusCode < 400) {
+        // Extract the redirect URL from the 'Location' header
+        String? redirectUrl = response.headers['location'];
+        if (redirectUrl != null) {
+          // Fetch the redirect URL to get the login page
+          var redirectResponse = await http.get(Uri.parse(redirectUrl));
+          if (redirectResponse.statusCode == 200) {
+            // Extract webAddress and secureKey from the redirect response
+            webAddress = extractWebAddress(redirectResponse.body);
+            secureKey = extractSecureKey(redirectResponse.body);
+            return (
+              isLoggedIn: false,
+              log: "Not logged in. Redirected to login page."
+            );
+          } else {
+            return (
+              isLoggedIn: false,
+              log:
+                  "Failed to fetch redirect page. Status code: ${redirectResponse.statusCode}"
+            );
+          }
+        } else {
+          return (isLoggedIn: false, log: "Redirect location header missing.");
+        }
+      } else if (response.statusCode == 204) {
+        return (isLoggedIn: true, log: "Already logged in.");
+      } else {
+        return (
+          isLoggedIn: false,
+          log: "Not logged in. Status code: ${response.statusCode}"
+        );
+      }
+    } catch (e) {
+      // Handle network errors (e.g., gstatic.com unreachable)
+      return (isLoggedIn: false, log: "Error checking login status: $e");
+    }
+  }
+
+  /// Logs in to the academic network.
+  ///
+  /// [username]: The username for authentication.
+  /// [password]: The password for authentication.
+  ///
+  /// Returns a log message describing the result.
+  Future<String> login(String username, String password) async {
+    var loginStatus = await checkLoginStatus();
+    if (loginStatus.isLoggedIn) {
+      return loginStatus.log; // Return log if already logged in
+    }
+
+    if (webAddress.isEmpty || secureKey.isEmpty) {
+      return "Failed to extract necessary information for login.";
+    }
+
+    try {
+      var loginResponse = await http.post(
+        Uri.parse('$webAddress/fgtauth?$secureKey'),
+        body: {
+          '4Tredir': 'http://www.gstatic.com/generate_204',
+          'magic': secureKey,
+          'username': username,
+          'password': password,
+        },
+      );
+
+      if (loginResponse.statusCode == 200) {
+        return "Login successful.";
+      } else {
+        return "Login failed. Status code: ${loginResponse.statusCode}";
+      }
+    } catch (e) {
+      return "Error during login: $e";
+    }
+  }
+
+  /// Logs out from the academic network.
+  ///
+  /// Returns a log message describing the result.
+  Future<String> logout() async {
+    if (webAddress.isEmpty || secureKey.isEmpty) {
+      return "No login details found. Please login first.";
+    }
+
+    try {
+      var logoutResponse = await http.get(
+        Uri.parse('$webAddress/logout?$secureKey'),
+        headers: {
+          'Referer': '$webAddress/keepalive?$secureKey',
+        },
+      );
+
+      if (logoutResponse.statusCode == 200) {
+        return "Logout successful.";
+      } else {
+        return "Logout failed. Status code: ${logoutResponse.statusCode}";
+      }
+    } catch (e) {
+      return "Error during logout: $e";
+    }
+  }
+
+  /// Extracts the web address from the HTML response.
+  String extractWebAddress(String body) {
+    // Regex to extract the web address from the HTML response
+    // Example: <a href="http://172.20.28.1/fgtauth?0d080d000a135b5c">
+    RegExp regex = RegExp(r'href="(http://[^"]+fgtauth\?[^"]+)"');
+    Match? match = regex.firstMatch(body);
+    if (match != null) {
+      return match.group(1)!.split('fgtauth')[0]; // Extract the base URL
+    }
+    return '';
+  }
+
+  /// Extracts the secure key from the HTML response.
+  String extractSecureKey(String body) {
+    // Regex to extract the secure key from the HTML response
+    // Example: <a href="http://172.20.28.1/fgtauth?0d080d000a135b5c">
+    RegExp regex = RegExp(r'fgtauth\?([^"]+)"');
+    Match? match = regex.firstMatch(body);
+    if (match != null) {
+      return match.group(1)!; // Extract the secure key
+    }
+    return '';
+  }
+}
+import 'package:http/http.dart' as http;
+
+class HostelWifiAuth {
+  // Base URL for the authentication server
+  final String _baseUrl = "http://172.20.28.1:8002";
+  final String _zone = "hostelzone";
+  final String _redirUrl = "google.co.in";
+
+  // Variables to store login and logout details
+  String? _logoutId;
+
+  /// Logs in to the Hostel WiFi network.
+  ///
+  /// [username]: The username for authentication.
+  /// [password]: The password for authentication.
+  ///
+  /// Returns a string indicating the result of the login attempt.
+  /// On success, returns "Login successful."
+  /// On failure, returns an error message.
+  Future<String> login(String username, String password) async {
+    final String url = "$_baseUrl/index.php?zone=$_zone&redirurl=$_redirUrl";
+
+    try {
+      // Send the login POST request
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: {
+          "auth_user": username,
+          "auth_pass": password,
+          "redirurl": _redirUrl,
+          "accept": "login",
+        },
+      );
+
+      if (response.statusCode == 200) {
+        _extractLogoutId(response.body); // Extract logout_id from the response
+        return "Login successful.";
+      } else {
+        return "Login failed. Status code: ${response.statusCode}";
+      }
+    } catch (e) {
+      return "Error during login: $e";
+    }
+  }
+
+  /// Logs out from the Hostel WiFi network.
+  ///
+  /// Returns a string indicating the result of the logout attempt.
+  /// On success, returns "Logout successful."
+  /// On failure, returns an error message.
+  Future<String> logout() async {
+    if (_logoutId == null) {
+      return "No logout ID found. Please login first.";
+    }
+
+    final String url = "$_baseUrl/index.php";
+
+    try {
+      // Send the logout POST request
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: {
+          "logout_id": _logoutId!,
+          "zone": _zone,
+          "logout": "Logout",
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return "Logout successful.";
+      } else {
+        return "Logout failed. Status code: ${response.statusCode}";
+      }
+    } catch (e) {
+      return "Error during logout: $e";
+    }
+  }
+
+  /// Extracts the `logout_id` from the login response HTML.
+  ///
+  /// [html]: The HTML response body from the login request.
+  void _extractLogoutId(String html) {
+    // Regex to extract the logout_id from the HTML response
+    RegExp regex = RegExp(r'name="logout_id" type="hidden" value="([^"]+)"');
+    Match? match = regex.firstMatch(html);
+
+    if (match != null) {
+      _logoutId = match.group(1);
+    }
+  }
+}
