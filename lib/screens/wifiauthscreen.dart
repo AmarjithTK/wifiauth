@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For MethodChannel
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/academic.dart'; // AcademicAuth class
-import '../utils/hostel.dart'; // HostelWifiAuth class
+import 'package:awesome_notifications/awesome_notifications.dart';
+import '../utils/hostel.dart';
 
 class WiFiAuthScreen extends StatefulWidget {
   @override
@@ -12,24 +12,83 @@ class WiFiAuthScreen extends StatefulWidget {
 class _WiFiAuthScreenState extends State<WiFiAuthScreen> {
   final TextEditingController _logController = TextEditingController();
   String responseMessage = '';
-  String? _connectedWifi; // Tracks the currently connected WiFi
-  bool _isAuthenticated = false; // Tracks authentication status
-
-  // Instances of the authentication classes
   final HostelWifiAuth _hostelWifiAuth = HostelWifiAuth();
-  final AcademicAuth _academicAuth = AcademicAuth();
-
-  // Method channel to communicate with native Android code
   static const platform = MethodChannel('com.example.wifiauth/network');
-
   String? _username;
   String? _password;
-  String? _secretCode;
 
   @override
   void initState() {
     super.initState();
+    _initializeNotifications();
     _loadCredentials();
+  }
+
+  Future<void> _initializeNotifications() async {
+    await AwesomeNotifications().initialize(
+      null,
+      [
+        NotificationChannel(
+          channelKey: 'wifi_channel',
+          channelName: 'WiFi Control',
+          channelDescription: 'Notification channel for WiFi controls',
+          defaultColor: Colors.blue,
+          importance: NotificationImportance.Max,
+          locked: true, // Prevents dismissing by swipe
+        )
+      ],
+    );
+
+    AwesomeNotifications().setListeners(
+      onActionReceivedMethod: onActionReceivedMethod,
+    );
+
+    await _createPersistentNotification();
+  }
+
+  @pragma('vm:entry-point')
+  static Future<void> onActionReceivedMethod(ReceivedAction receivedAction) async {
+    WidgetsFlutterBinding.ensureInitialized(); // Ensure Flutter engine is ready
+
+    if (receivedAction.buttonKeyPressed == 'connect') {
+      final prefs = await SharedPreferences.getInstance();
+      final username = prefs.getString('username');
+      final password = prefs.getString('password');
+
+      if (username != null && password != null) {
+        try {
+          await HostelWifiAuth().login(username, password);
+          await const MethodChannel('com.example.wifiauth/network')
+              .invokeMethod('useNetworkAsIs'); // Ensure network is used as expected
+        } catch (e) {
+          print('Background connection error: $e');
+        }
+      }
+
+      // Re-create the notification so it doesn't disappear
+      await _createPersistentNotification();
+    }
+  }
+
+  static Future<void> _createPersistentNotification() async {
+    await AwesomeNotifications().createNotification(
+      content: NotificationContent(
+        id: 1,
+        channelKey: 'wifi_channel',
+        title: 'Hostel WiFi Control',
+        body: 'Tap Connect Now to connect',
+        locked: true,
+        autoDismissible: false, // Ensures the notification remains until manually disabled
+        notificationLayout: NotificationLayout.Default,
+      ),
+      actionButtons: [
+        NotificationActionButton(
+          key: 'connect',
+          label: 'Connect Now',
+          actionType: ActionType.SilentBackgroundAction,
+        )
+      ],
+    );
   }
 
   Future<void> _loadCredentials() async {
@@ -37,109 +96,35 @@ class _WiFiAuthScreenState extends State<WiFiAuthScreen> {
     setState(() {
       _username = prefs.getString('username');
       _password = prefs.getString('password');
-      _secretCode = prefs.getString('secretCode');
     });
   }
 
-  /// Connects to the Hostel WiFi network.
   Future<void> connectToHostelWiFi() async {
+    _logController.text += "\n[${DateTime.now()}] Connection attempt initiated\n";
+
     if (_username == null || _password == null) {
-      setState(() {
-        responseMessage = "Credentials not found. Please login first.";
-      });
+      setState(() => responseMessage = "Credentials not found");
+      _logController.text += "[${DateTime.now()}] Credentials missing\n";
       return;
     }
-
-    _logController.clear();
-    _logController.text += "Connecting to Hostel WiFi...\n";
 
     try {
       final String log = await _hostelWifiAuth.login(_username!, _password!);
-      _logController.text += log + "\n";
-      setState(() {
-        responseMessage = log;
-        _isAuthenticated = true;
-        _connectedWifi = "Hostel WiFi";
-      });
-
+      _logController.text += "[${DateTime.now()}] $log\n";
+      setState(() => responseMessage = log);
       await _useNetworkAsIs();
     } catch (e) {
-      _logController.text += "Error: $e\n";
-      setState(() {
-        responseMessage = "Error: $e";
-        _isAuthenticated = false;
-        _connectedWifi = null;
-      });
+      _logController.text += "[${DateTime.now()}] Error: $e\n";
+      setState(() => responseMessage = "Error: $e");
     }
   }
 
-  /// Connects to the Academic WiFi network.
-  Future<void> connectToAcademicWiFi() async {
-    if (_username == null || _password == null) {
-      setState(() {
-        responseMessage = "Credentials not found. Please login first.";
-      });
-      return;
-    }
-
-    _logController.clear();
-    _logController.text += "Connecting to Academic WiFi...\n";
-
-    try {
-      final String log = await _academicAuth.login(_username!, _password!);
-      _logController.text += log + "\n";
-      setState(() {
-        responseMessage = log;
-        _isAuthenticated = true;
-        _connectedWifi = "Academic WiFi";
-      });
-
-      await _useNetworkAsIs();
-    } catch (e) {
-      _logController.text += "Error: $e\n";
-      setState(() {
-        responseMessage = "Error: $e";
-        _isAuthenticated = false;
-        _connectedWifi = null;
-      });
-    }
-  }
-
-  /// Logs out from the connected WiFi network.
-  Future<void> logout() async {
-    _logController.text += "Logging out from $_connectedWifi...\n";
-
-    try {
-      if (_connectedWifi == "Hostel WiFi") {
-        final String log = await _hostelWifiAuth.logout();
-        _logController.text += log + "\n";
-      } else if (_connectedWifi == "Academic WiFi") {
-        final String log = await _academicAuth.logout();
-        _logController.text += log + "\n";
-      }
-
-      setState(() {
-        _isAuthenticated = false;
-        _connectedWifi = null;
-        responseMessage = "Logged out successfully.";
-      });
-    } catch (e) {
-      _logController.text += "Error during logout: $e\n";
-      setState(() {
-        responseMessage = "Error during logout: $e";
-      });
-    }
-  }
-
-  /// Marks the network as validated using the native method.
   Future<void> _useNetworkAsIs() async {
     try {
-      // Call the native method to mark the network as validated
       await platform.invokeMethod('useNetworkAsIs');
-      _logController.text += "Network marked as validated.\n";
+      _logController.text += "[${DateTime.now()}] Network validated\n";
     } on PlatformException catch (e) {
-      _logController.text +=
-          "Failed to mark network as validated: ${e.message}\n";
+      _logController.text += "[${DateTime.now()}] Validation error: ${e.message}\n";
     }
   }
 
@@ -147,83 +132,64 @@ class _WiFiAuthScreenState extends State<WiFiAuthScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Center(child: Text('WiFi Authenticator')),
+        title: Center(
+          child: const Text(
+            'NITC Hostel WiFiAuth',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.normal, color: Colors.black),
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 2,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
-      body: Padding(
+      body: Container(
+        color: Colors.white,
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            // Display connected WiFi card if authenticated
-            if (_isAuthenticated && _connectedWifi != null)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Text(
-                        "Connected to:",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        _connectedWifi!,
-                        style: TextStyle(
-                          fontSize: 20,
-                          color: Colors.green,
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: logout,
-                        child: Text('Logout'),
-                      ),
-                    ],
-                  ),
+          children: [
+            SizedBox(height: 50,),
+            ElevatedButton(
+              onPressed: connectToHostelWiFi,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 15),
+                textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
               ),
-
-            // Display authentication buttons
-            if (!_isAuthenticated) ...[
-              ElevatedButton(
-                onPressed: connectToHostelWiFi,
-                child: Text('Connect to Hostel WiFi'),
-              ),
-              SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: connectToAcademicWiFi,
-                child: Text('Connect to Academic WiFi'),
-              ),
-            ],
-
-            SizedBox(height: 20),
-            Text(responseMessage),
-            SizedBox(height: 20),
-
-            // Display detailed logs
+              child: const Text('Connect to Hostel WiFi'),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              responseMessage,
+              style: const TextStyle(fontSize: 18, color: Colors.black87),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
             Expanded(
               child: TextField(
                 controller: _logController,
-                maxLines: null, // Allow multiple lines
-                readOnly: true, // Make it read-only
-                decoration: InputDecoration(
+                maxLines: null,
+                readOnly: true,
+                style: const TextStyle(fontSize: 16, color: Colors.black87),
+                decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  labelText: 'Detailed Logs',
+                  labelText: 'Connection Logs',
+                  labelStyle: TextStyle(fontSize: 18),
+                  contentPadding: EdgeInsets.all(16),
                 ),
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 "Made by AmarjithTK (B22EE)",
                 style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
+                  fontSize: 25,
+                  color: Colors.deepPurple,
+                  fontStyle: FontStyle.normal,
                 ),
               ),
             ),
